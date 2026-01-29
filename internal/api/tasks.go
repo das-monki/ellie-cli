@@ -145,3 +145,20 @@ func (c *Client) SearchTasks(query string) ([]models.Task, error) {
 
 	return tasks, nil
 }
+
+// GetTasksForDate retrieves tasks for a specific date including recurring tasks
+func (c *Client) GetTasksForDate(date string) ([]models.Task, error) {
+	path := fmt.Sprintf("/v1/tasks/forDate?date=%s", url.QueryEscape(date))
+
+	resp, err := c.Get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var tasks []models.Task
+	if err := json.Unmarshal(resp, &tasks); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return tasks, nil
+}

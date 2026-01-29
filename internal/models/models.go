@@ -2,7 +2,7 @@ package models
 
 import "encoding/json"
 
-// Task represents a task in the ELLI planner
+// Task represents a task in the ELLIE planner
 type Task struct {
 	ID            string          `json:"id"`
 	Description   string          `json:"description"`

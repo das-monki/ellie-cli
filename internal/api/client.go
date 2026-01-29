@@ -11,7 +11,7 @@ import (
 	"github.com/goldie/ellie-cli/internal/config"
 )
 
-// Client is the API client for the ELLI planner
+// Client is the API client for the ELLIE planner
 type Client struct {
 	baseURL    string
 	apiKey     string

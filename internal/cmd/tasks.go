@@ -269,6 +269,31 @@ var searchTasksCmd = &cobra.Command{
 	},
 }
 
+var agendaCmd = &cobra.Command{
+	Use:   "agenda",
+	Short: "Get daily agenda including recurring tasks",
+	Long:  "Fetches all tasks for a date including recurring tasks. Unlike 'list', this shows the full daily agenda.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		date, _ := cmd.Flags().GetString("date")
+
+		if date == "" {
+			return fmt.Errorf("--date flag is required")
+		}
+
+		client, err := api.NewClient()
+		if err != nil {
+			return err
+		}
+
+		tasks, err := client.GetTasksForDate(date)
+		if err != nil {
+			return err
+		}
+
+		return outputTasks(tasks)
+	},
+}
+
 func init() {
 	// list command flags
 	listTasksCmd.Flags().String("date", "", "Date in YYYY-MM-DD format (required)")
@@ -276,6 +301,9 @@ func init() {
 
 	// by-list command flags
 	byListCmd.Flags().String("list-id", "", "List ID (required)")
+
+	// agenda command flags
+	agendaCmd.Flags().String("date", "", "Date in YYYY-MM-DD format (required)")
 
 	// create command flags
 	createTaskCmd.Flags().String("desc", "", "Task description (required)")
@@ -305,6 +333,7 @@ func init() {
 	tasksCmd.AddCommand(completeTaskCmd)
 	tasksCmd.AddCommand(deleteTaskCmd)
 	tasksCmd.AddCommand(searchTasksCmd)
+	tasksCmd.AddCommand(agendaCmd)
 }
 
 func outputTask(task *models.Task) error {
