@@ -3,11 +3,53 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"time"
 
 	"github.com/goldie/ellie-cli/internal/api"
 	"github.com/goldie/ellie-cli/internal/models"
 	"github.com/spf13/cobra"
 )
+
+// formatStartTime converts a HH:MM time to ISO datetime format
+// If start is already in ISO format or empty, it returns as-is
+func formatStartTime(start, date string) (string, error) {
+	if start == "" {
+		return "", nil
+	}
+
+	// Check if already ISO format (contains 'T')
+	if regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T`).MatchString(start) {
+		return start, nil
+	}
+
+	// Check if it's HH:MM format
+	timeMatch := regexp.MustCompile(`^(\d{1,2}):(\d{2})$`).FindStringSubmatch(start)
+	if timeMatch == nil {
+		return "", fmt.Errorf("invalid start time format '%s': expected HH:MM or ISO datetime", start)
+	}
+
+	// We need a date to construct the full datetime
+	if date == "" {
+		return "", fmt.Errorf("--date is required when using --start with HH:MM format")
+	}
+
+	// Parse the date
+	parsedDate, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return "", fmt.Errorf("invalid date format '%s': expected YYYY-MM-DD", date)
+	}
+
+	// Parse the time components
+	var hour, minute int
+	fmt.Sscanf(start, "%d:%d", &hour, &minute)
+
+	// Combine date and time into ISO format
+	combined := time.Date(parsedDate.Year(), parsedDate.Month(), parsedDate.Day(),
+		hour, minute, 0, 0, time.UTC)
+
+	return combined.Format(time.RFC3339), nil
+}
 
 var tasksCmd = &cobra.Command{
 	Use:   "tasks",
@@ -116,6 +158,12 @@ var createTaskCmd = &cobra.Command{
 			return fmt.Errorf("--desc flag is required")
 		}
 
+		// Convert HH:MM time to ISO datetime if needed
+		formattedStart, err := formatStartTime(start, date)
+		if err != nil {
+			return err
+		}
+
 		req := &models.CreateTaskRequest{
 			Description: desc,
 		}
@@ -123,8 +171,8 @@ var createTaskCmd = &cobra.Command{
 		if date != "" {
 			req.Date = &date
 		}
-		if start != "" {
-			req.Start = &start
+		if formattedStart != "" {
+			req.Start = &formattedStart
 		}
 		if estimatedTime > 0 {
 			req.EstimatedTime = &estimatedTime
@@ -178,7 +226,12 @@ var updateTaskCmd = &cobra.Command{
 			req.Date = &date
 		}
 		if cmd.Flags().Changed("start") {
-			req.Start = &start
+			// Convert HH:MM time to ISO datetime if needed
+			formattedStart, err := formatStartTime(start, date)
+			if err != nil {
+				return err
+			}
+			req.Start = &formattedStart
 		}
 		if cmd.Flags().Changed("estimated-time") {
 			req.EstimatedTime = &estimatedTime
