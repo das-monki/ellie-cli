@@ -11,44 +11,65 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// formatStartTime converts a HH:MM time to ISO datetime format
-// If start is already in ISO format or empty, it returns as-is
-func formatStartTime(start, date string) (string, error) {
+var (
+	isoDateTimeRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T`)
+	clockTimeRe   = regexp.MustCompile(`^(\d{1,2}):(\d{2})$`)
+)
+
+// resolveLocation picks the timezone that a bare HH:MM start time is written in.
+// Empty means the machine's local zone, which is what someone saying "16:00" means.
+func resolveLocation(timezone string) (*time.Location, error) {
+	if timezone == "" {
+		return time.Local, nil
+	}
+
+	loc, err := time.LoadLocation(timezone)
+	if err != nil {
+		return nil, fmt.Errorf("unknown timezone '%s': expected an IANA name like Europe/Zurich", timezone)
+	}
+	return loc, nil
+}
+
+// formatStartTime converts a HH:MM start time into the ISO datetime the API wants.
+// The clock time is read in loc -- not UTC -- so `--start 16:00` means 16:00 where
+// the user is, matching how the API already treats --date (stored as local midnight).
+// The result is expressed in UTC, since only the instant travels over the wire.
+// A start that is already an ISO datetime carries its own offset and is passed through.
+func formatStartTime(start, date string, loc *time.Location) (string, error) {
 	if start == "" {
 		return "", nil
 	}
 
-	// Check if already ISO format (contains 'T')
-	if regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T`).MatchString(start) {
+	if isoDateTimeRe.MatchString(start) {
 		return start, nil
 	}
 
-	// Check if it's HH:MM format
-	timeMatch := regexp.MustCompile(`^(\d{1,2}):(\d{2})$`).FindStringSubmatch(start)
-	if timeMatch == nil {
+	if !clockTimeRe.MatchString(start) {
 		return "", fmt.Errorf("invalid start time format '%s': expected HH:MM or ISO datetime", start)
 	}
 
-	// We need a date to construct the full datetime
+	// The clock time alone does not say which day it falls on.
 	if date == "" {
 		return "", fmt.Errorf("--date is required when using --start with HH:MM format")
 	}
 
-	// Parse the date
 	parsedDate, err := time.Parse("2006-01-02", date)
 	if err != nil {
 		return "", fmt.Errorf("invalid date format '%s': expected YYYY-MM-DD", date)
 	}
 
-	// Parse the time components
 	var hour, minute int
-	fmt.Sscanf(start, "%d:%d", &hour, &minute)
+	if _, err := fmt.Sscanf(start, "%d:%d", &hour, &minute); err != nil {
+		return "", fmt.Errorf("invalid start time format '%s': expected HH:MM or ISO datetime", start)
+	}
+	if hour > 23 || minute > 59 {
+		return "", fmt.Errorf("invalid start time '%s': hour must be 0-23 and minute 0-59", start)
+	}
 
-	// Combine date and time into ISO format
 	combined := time.Date(parsedDate.Year(), parsedDate.Month(), parsedDate.Day(),
-		hour, minute, 0, 0, time.UTC)
+		hour, minute, 0, 0, loc)
 
-	return combined.Format(time.RFC3339), nil
+	return combined.UTC().Format(time.RFC3339), nil
 }
 
 var tasksCmd = &cobra.Command{
@@ -149,6 +170,7 @@ var createTaskCmd = &cobra.Command{
 		desc, _ := cmd.Flags().GetString("desc")
 		date, _ := cmd.Flags().GetString("date")
 		start, _ := cmd.Flags().GetString("start")
+		timezone, _ := cmd.Flags().GetString("timezone")
 		estimatedTime, _ := cmd.Flags().GetInt("estimated-time")
 		listID, _ := cmd.Flags().GetString("list-id")
 		label, _ := cmd.Flags().GetString("label")
@@ -158,8 +180,13 @@ var createTaskCmd = &cobra.Command{
 			return fmt.Errorf("--desc flag is required")
 		}
 
+		loc, err := resolveLocation(timezone)
+		if err != nil {
+			return err
+		}
+
 		// Convert HH:MM time to ISO datetime if needed
-		formattedStart, err := formatStartTime(start, date)
+		formattedStart, err := formatStartTime(start, date, loc)
 		if err != nil {
 			return err
 		}
@@ -211,6 +238,7 @@ var updateTaskCmd = &cobra.Command{
 		desc, _ := cmd.Flags().GetString("desc")
 		date, _ := cmd.Flags().GetString("date")
 		start, _ := cmd.Flags().GetString("start")
+		timezone, _ := cmd.Flags().GetString("timezone")
 		estimatedTime, _ := cmd.Flags().GetInt("estimated-time")
 		complete, _ := cmd.Flags().GetBool("complete")
 		listID, _ := cmd.Flags().GetString("list-id")
@@ -226,8 +254,13 @@ var updateTaskCmd = &cobra.Command{
 			req.Date = &date
 		}
 		if cmd.Flags().Changed("start") {
+			loc, err := resolveLocation(timezone)
+			if err != nil {
+				return err
+			}
+
 			// Convert HH:MM time to ISO datetime if needed
-			formattedStart, err := formatStartTime(start, date)
+			formattedStart, err := formatStartTime(start, date, loc)
 			if err != nil {
 				return err
 			}
@@ -361,7 +394,8 @@ func init() {
 	// create command flags
 	createTaskCmd.Flags().String("desc", "", "Task description (required)")
 	createTaskCmd.Flags().String("date", "", "Date in YYYY-MM-DD format")
-	createTaskCmd.Flags().String("start", "", "Start time")
+	createTaskCmd.Flags().String("start", "", "Start time as HH:MM (local) or an ISO datetime")
+	createTaskCmd.Flags().String("timezone", "", "Timezone the HH:MM start time is in (default: local)")
 	createTaskCmd.Flags().Int("estimated-time", 0, "Estimated time in seconds")
 	createTaskCmd.Flags().String("list-id", "", "List ID")
 	createTaskCmd.Flags().String("label", "", "Label ID")
@@ -370,7 +404,8 @@ func init() {
 	// update command flags
 	updateTaskCmd.Flags().String("desc", "", "Task description")
 	updateTaskCmd.Flags().String("date", "", "Date in YYYY-MM-DD format")
-	updateTaskCmd.Flags().String("start", "", "Start time")
+	updateTaskCmd.Flags().String("start", "", "Start time as HH:MM (local) or an ISO datetime")
+	updateTaskCmd.Flags().String("timezone", "", "Timezone the HH:MM start time is in (default: local)")
 	updateTaskCmd.Flags().Int("estimated-time", 0, "Estimated time in seconds")
 	updateTaskCmd.Flags().Bool("complete", false, "Mark as complete")
 	updateTaskCmd.Flags().String("list-id", "", "List ID")
@@ -436,12 +471,14 @@ func printTask(task *models.Task) {
 	fmt.Printf("%s %s\n", status, task.Description)
 	fmt.Printf("    ID: %s\n", task.ID)
 
-	if dateStr := task.GetDateString(); dateStr != "" {
-		fmt.Printf("    Date: %s\n", dateStr)
+	// Timestamps come back as instants; show them in local time, naming the zone so
+	// there is no doubt about which clock the number belongs to.
+	if date, ok := task.GetDate(); ok {
+		fmt.Printf("    Date: %s\n", date.In(time.Local).Format("2006-01-02"))
 	}
 
-	if startStr := task.GetStartString(); startStr != "" {
-		fmt.Printf("    Start: %s\n", startStr)
+	if start, ok := task.GetStart(); ok {
+		fmt.Printf("    Start: %s\n", start.In(time.Local).Format("15:04 MST"))
 	}
 
 	if task.EstimatedTime != nil && *task.EstimatedTime > 0 {

@@ -1,6 +1,9 @@
 package models
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Task represents a task in the ELLIE planner
 type Task struct {
@@ -21,28 +24,49 @@ type Task struct {
 	CreatedAt     json.RawMessage `json:"created_at,omitempty"`
 }
 
-// GetDateString attempts to extract a date string from the Date field
-func (t *Task) GetDateString() string {
-	if t.Date == nil || string(t.Date) == "null" {
-		return ""
+// ParseTimestamp decodes the two shapes the API uses for an instant: an ISO 8601
+// string, and a Firestore timestamp object ({"_seconds":…,"_nanoseconds":…}).
+// Which one comes back depends on the endpoint -- createTask and updateTask echo
+// strings, while getTask and byDate return the Firestore objects -- so both have
+// to be handled or the timestamp silently reads as absent.
+func ParseTimestamp(raw json.RawMessage) (time.Time, bool) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return time.Time{}, false
 	}
-	var dateStr string
-	if json.Unmarshal(t.Date, &dateStr) == nil {
-		return dateStr
+
+	var isoStr string
+	if json.Unmarshal(raw, &isoStr) == nil {
+		if isoStr == "" {
+			return time.Time{}, false
+		}
+		if parsed, err := time.Parse(time.RFC3339, isoStr); err == nil {
+			return parsed, true
+		}
+		if parsed, err := time.Parse("2006-01-02", isoStr); err == nil {
+			return parsed, true
+		}
+		return time.Time{}, false
 	}
-	return ""
+
+	var ts struct {
+		Seconds     *int64 `json:"_seconds"`
+		Nanoseconds int64  `json:"_nanoseconds"`
+	}
+	if json.Unmarshal(raw, &ts) == nil && ts.Seconds != nil {
+		return time.Unix(*ts.Seconds, ts.Nanoseconds).UTC(), true
+	}
+
+	return time.Time{}, false
 }
 
-// GetStartString attempts to extract a start time string
-func (t *Task) GetStartString() string {
-	if t.Start == nil || string(t.Start) == "null" {
-		return ""
-	}
-	var startStr string
-	if json.Unmarshal(t.Start, &startStr) == nil {
-		return startStr
-	}
-	return ""
+// GetDate returns the task's date, if it has one.
+func (t *Task) GetDate() (time.Time, bool) {
+	return ParseTimestamp(t.Date)
+}
+
+// GetStart returns the task's start instant, if it has one.
+func (t *Task) GetStart() (time.Time, bool) {
+	return ParseTimestamp(t.Start)
 }
 
 // Subtask represents a subtask within a task

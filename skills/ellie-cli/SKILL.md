@@ -29,8 +29,9 @@ ellie tasks search "meeting"
 # Create a task
 ellie tasks create --desc "Review pull request"
 
-# Create a scheduled task
+# Create a scheduled task. --start is local time; pass --timezone for another zone.
 ellie tasks create --desc "Team standup" --date 2025-01-28 --start "09:00"
+ellie tasks create --desc "US sync" --date 2025-01-28 --start "09:00" --timezone America/New_York
 
 # Create with estimated time (in seconds)
 ellie tasks create --desc "Code review" --estimated-time 1800
@@ -139,23 +140,44 @@ exist, and it has nothing to do with the API key -- the same key works on every 
 command. **Do not go debugging the API key or the secret wiring when you see it.**
 Use `ellie tasks list --date <date>` instead; it is the working daily view.
 
-### `--start` is UTC, not local time
+### `--start` is local time -- do not convert it yourself
 
-`--start "16:00"` is sent as **16:00 UTC**, not 16:00 in the user's timezone. When
-planning someone's day, either convert their local times to UTC first, or state the
-schedule back to them in UTC so the offset is visible. Silently treating it as local
-time will place every task wrong by the UTC offset.
+`--start "16:00"` means 16:00 on the **machine's local clock**, and `tasks list` /
+`tasks get` print start times back in local time with the zone named (`Start: 16:00 CEST`).
+So schedule in the user's own hours and say them back plainly. Do **not** pre-convert to
+UTC: that was needed before this was fixed, and doing it now shifts every task by the
+offset in the wrong direction.
 
-`--date`, by contrast, is stored as local midnight, so a task created for `2026-12-31`
-reads back as `2026-12-30T23:00:00.000Z` in a UTC+1 timezone. That is expected, not a bug.
+Pass `--timezone` to write a time in some other zone (`--timezone UTC`,
+`--timezone America/New_York`). A `--start` given as a full ISO datetime carries its own
+offset and is sent unchanged.
+
+Over the wire the API stores instants, so a 16:00 CEST task reads back as
+`14:00Z` in `--json` output (raw epoch seconds). That is the same moment, not a bug --
+`--json` is for machines, and the human-readable output is already localized.
 
 ### `--start` requires `--date`
 
 `ellie tasks update <id> --start "16:00"` fails with
-`--date is required when using --start with HH:MM format`. Always pass `--date` too,
-even when the date is unchanged. (An older workaround was to delete and recreate a task
-in order to change its time. That is no longer necessary -- `update --start --date`
-works.)
+`--date is required when using --start with HH:MM format`. A clock time alone does not say
+which day it lands on, so pass `--date` too, even when the date is unchanged.
+
+### `404 Task not found` on update means the ID is wrong, not the route
+
+`tasks update` works -- on tasks made in the CLI and in the app alike. A
+`API error (status 404): {"error":"Task not found"}` means the ID string you sent does not
+exist, so re-read it from `tasks list --json` before suspecting the endpoint.
+
+The classic way to send a bad ID is shell word-splitting. This bash idiom silently breaks
+under zsh, which does not split unquoted expansions, so `$1` becomes the whole `"<id> <time>"`
+pair and the ID travels with the time glued onto it:
+
+```bash
+# BROKEN in zsh -- $1 is "<id> 12:05", $2 is empty
+for pair in "$id1 12:05" "$id2 12:35"; do set -- $pair; ellie tasks update "$1" ...; done
+```
+
+Loop over IDs directly instead, and quote them.
 
 ### No `--version` flag
 
