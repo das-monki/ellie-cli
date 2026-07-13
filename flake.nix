@@ -14,15 +14,27 @@
     in {
       packages = forAllSystems (system:
         let pkgs = nixpkgs.legacyPackages.${system};
-        in {
-          default = pkgs.buildGoModule {
+        in rec {
+          ellie = pkgs.buildGoModule {
             pname = "ellie";
             version = "0.1.0";
             src = ./.;
             vendorHash = "sha256-JFrzxduL0Wr3+CGfAmJbAcaCWRP/vLF6nQWds2aamtw=";
+
+            # Ship the agent skill alongside the binary, so a single package
+            # gives a consumer both the CLI and its skill.
+            postInstall = ''
+              mkdir -p $out/share/agent-skills
+              cp -r ${./skills/ellie-cli} $out/share/agent-skills/ellie-cli
+            '';
           };
+
+          default = ellie;
         }
       );
+
+      # The skill on its own, for consumers that want it without the binary's closure.
+      skills.ellie-cli = ./skills/ellie-cli;
 
       devShells = forAllSystems (system:
         let

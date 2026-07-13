@@ -52,6 +52,7 @@ ellie-cli/
 │   │   └── config.go          # API key + base URL handling
 │   └── models/                # Data models
 │       └── models.go          # API request/response types
+├── skills/ellie-cli/SKILL.md  # Agent skill for this CLI
 ├── flake.nix                  # Nix flake
 └── go.mod                     # Go module
 ```
@@ -73,6 +74,20 @@ ellie-cli/
 2. Add API method in appropriate `internal/api/*.go` file
 3. Add Cobra command in `internal/cmd/*.go`
 4. Register command in `init()` function
+5. Document the command in `skills/ellie-cli/SKILL.md`
+
+### Agent Skill
+
+`skills/ellie-cli/SKILL.md` documents the CLI for coding agents. It lives here, next
+to the commands it describes, so it stays in step with them. The flake exposes it two
+ways:
+
+- `packages.<system>.ellie` installs it to `$out/share/agent-skills/ellie-cli/`, so one
+  package yields both the binary and its skill
+- `skills.ellie-cli` exposes the directory on its own, for consumers that want the skill
+  without the binary's closure
+
+Note that `skills/` must be tracked by git for the flake to see it.
 
 ### Testing
 
