@@ -17,9 +17,6 @@ ellie tasks list --date 2025-01-28
 # List tasks with timezone
 ellie tasks list --date 2025-01-28 --timezone America/New_York
 
-# Daily agenda: all tasks for a date, including recurring ones (--date is required)
-ellie tasks agenda --date 2025-01-28
-
 # Get unscheduled tasks (braindump)
 ellie tasks braindump
 
@@ -48,15 +45,16 @@ ellie tasks create --desc "Draft spec" --list-id <list-id> --label <label>
 # --list-id, --label, --priority, --complete)
 ellie tasks update <task-id> --desc "Updated description"
 
+# Reschedule a task. --start needs --date in the SAME command, even if the
+# date is not changing -- otherwise the command errors out.
+ellie tasks update <task-id> --start "16:00" --date 2025-01-28
+
 # Mark task complete
 ellie tasks complete <task-id>
 
 # Delete a task
 ellie tasks delete <task-id>
 ```
-
-`list` vs `agenda`: `list` returns the tasks scheduled on a date; `agenda` returns
-the full daily view for that date, including recurring tasks.
 
 ### Lists
 
@@ -123,6 +121,45 @@ The config file lives under the OS config directory (`~/Library/Application Supp
 on macOS, `~/.config/ellie` on Linux). It is only created when a command writes config, so
 when the key comes from the environment no config directory is needed at all -- which lets
 `ellie` run in a sandbox with no write access to that directory.
+
+## Gotchas
+
+Read these before scheduling anything -- each one has already cost a debugging session.
+
+### `tasks agenda` is broken; use `tasks list --date`
+
+`ellie tasks agenda` calls `/v1/tasks/forDate`, which is **not deployed**. It always fails:
+
+```
+Error: API error (status 403): {"message":"Missing Authentication Token"}
+```
+
+That message is a lie. It is what AWS API Gateway returns for a route that does not
+exist, and it has nothing to do with the API key -- the same key works on every other
+command. **Do not go debugging the API key or the secret wiring when you see it.**
+Use `ellie tasks list --date <date>` instead; it is the working daily view.
+
+### `--start` is UTC, not local time
+
+`--start "16:00"` is sent as **16:00 UTC**, not 16:00 in the user's timezone. When
+planning someone's day, either convert their local times to UTC first, or state the
+schedule back to them in UTC so the offset is visible. Silently treating it as local
+time will place every task wrong by the UTC offset.
+
+`--date`, by contrast, is stored as local midnight, so a task created for `2026-12-31`
+reads back as `2026-12-30T23:00:00.000Z` in a UTC+1 timezone. That is expected, not a bug.
+
+### `--start` requires `--date`
+
+`ellie tasks update <id> --start "16:00"` fails with
+`--date is required when using --start with HH:MM format`. Always pass `--date` too,
+even when the date is unchanged. (An older workaround was to delete and recreate a task
+in order to change its time. That is no longer necessary -- `update --start --date`
+works.)
+
+### No `--version` flag
+
+`ellie --version` errors with `unknown flag: --version`. Use `ellie --help`.
 
 ## When to Use
 
