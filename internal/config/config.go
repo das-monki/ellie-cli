@@ -33,16 +33,29 @@ func GetConfigDir() (string, error) {
 	return filepath.Join(configDir, configDirName), nil
 }
 
+// ensureConfigDir creates the config directory. Only the commands that write
+// config call this: reading the API key from ELLIE_API_KEY or ELLIE_API_KEY_FILE
+// needs no config directory at all, and creating one unconditionally would make
+// every command require a writable config dir -- which fails under a sandbox that
+// grants no write access there.
+func ensureConfigDir() (string, error) {
+	configDir, err := GetConfigDir()
+	if err != nil {
+		return "", err
+	}
+
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	return configDir, nil
+}
+
 // Init initializes the configuration
 func Init() error {
 	configDir, err := GetConfigDir()
 	if err != nil {
 		return err
-	}
-
-	// Create config directory if it doesn't exist
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
 	viper.SetConfigName(configFileName)
@@ -91,7 +104,7 @@ func GetAPIKey() (string, error) {
 
 // SetAPIKey saves the API key to the config file
 func SetAPIKey(apiKey string) error {
-	configDir, err := GetConfigDir()
+	configDir, err := ensureConfigDir()
 	if err != nil {
 		return err
 	}
@@ -116,7 +129,7 @@ func GetBaseURL() string {
 
 // SetBaseURL saves the base URL to the config file
 func SetBaseURL(baseURL string) error {
-	configDir, err := GetConfigDir()
+	configDir, err := ensureConfigDir()
 	if err != nil {
 		return err
 	}

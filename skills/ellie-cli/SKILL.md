@@ -91,7 +91,7 @@ ellie users usage
 ### Configuration
 
 ```bash
-# Set API key (stored in ~/.config/ellie/config.yaml)
+# Set API key (writes a config file; see "Configuration" below for its location)
 ellie config set-api-key <your-api-key>
 
 # Show current configuration
@@ -118,6 +118,11 @@ The API key is resolved in this order:
 3. Config file, via `ellie config set-api-key`
 
 `ELLIE_BASE_URL` overrides the API base URL.
+
+The config file lives under the OS config directory (`~/Library/Application Support/ellie`
+on macOS, `~/.config/ellie` on Linux). It is only created when a command writes config, so
+when the key comes from the environment no config directory is needed at all -- which lets
+`ellie` run in a sandbox with no write access to that directory.
 
 ## When to Use
 
