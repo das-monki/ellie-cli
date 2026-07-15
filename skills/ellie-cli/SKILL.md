@@ -36,8 +36,8 @@ ellie tasks create --desc "US sync" --date 2025-01-28 --start "09:00" --timezone
 # Create with estimated time (in seconds)
 ellie tasks create --desc "Code review" --estimated-time 1800
 
-# Create with priority (1=Low, 2=Medium, 3=High, 4=Urgent)
-ellie tasks create --desc "Fix critical bug" --priority 4
+# Create with priority (inverted scale: 0=High, 1=Medium, 2=Low)
+ellie tasks create --desc "Fix critical bug" --priority 0
 
 # Create in a list, with a label
 ellie tasks create --desc "Draft spec" --list-id <list-id> --label <label>
@@ -178,6 +178,21 @@ for pair in "$id1 12:05" "$id2 12:35"; do set -- $pair; ellie tasks update "$1" 
 ```
 
 Loop over IDs directly instead, and quote them.
+
+### Priority is now 0-2 on an inverted scale
+
+The API used to take priorities 1-4 (Low/Medium/High/Urgent). It now accepts only
+**0-2, and the scale is inverted**: `0 = High`, `1 = Medium`, `2 = Low`. So the
+highest priority is `--priority 0`, not the biggest number. `--priority 3` or `4` is
+rejected client-side with `invalid priority N: must be 0 (High), 1 (Medium), or 2 (Low)`,
+and the API itself returns `400 invalid_task_priority` for them.
+
+Priority is **off by default** in the Ellie app -- the API stores the value regardless,
+but the UI shows no indicator until you turn it on under *Power features -> Enable task
+priority*. So a task can have a priority the UI does not render.
+
+The API also echoes priority back as a JSON **string** (`"0"`), so `--json` output shows
+`"priority": "0"`, not a number. That is the API's shape, not a bug.
 
 ### No `--version` flag
 

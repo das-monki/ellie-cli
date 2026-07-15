@@ -77,6 +77,16 @@ var tasksCmd = &cobra.Command{
 	Short: "Manage tasks",
 }
 
+// validatePriority rejects priorities the API no longer accepts. It supports only
+// 0-2 (0=High, 1=Medium, 2=Low); sending 3 or 4 (formerly High/Urgent) comes back
+// as a 400 invalid_task_priority, so catch it here with a message that says the range.
+func validatePriority(p int) error {
+	if p < 0 || p > 2 {
+		return fmt.Errorf("invalid priority %d: must be 0 (High), 1 (Medium), or 2 (Low)", p)
+	}
+	return nil
+}
+
 var getTaskCmd = &cobra.Command{
 	Use:   "get <id>",
 	Short: "Get a task by ID",
@@ -180,6 +190,12 @@ var createTaskCmd = &cobra.Command{
 			return fmt.Errorf("--desc flag is required")
 		}
 
+		if cmd.Flags().Changed("priority") {
+			if err := validatePriority(priority); err != nil {
+				return err
+			}
+		}
+
 		loc, err := resolveLocation(timezone)
 		if err != nil {
 			return err
@@ -210,7 +226,7 @@ var createTaskCmd = &cobra.Command{
 		if label != "" {
 			req.Label = &label
 		}
-		if priority > 0 {
+		if cmd.Flags().Changed("priority") {
 			req.Priority = &priority
 		}
 
@@ -279,6 +295,9 @@ var updateTaskCmd = &cobra.Command{
 			req.Label = &label
 		}
 		if cmd.Flags().Changed("priority") {
+			if err := validatePriority(priority); err != nil {
+				return err
+			}
 			req.Priority = &priority
 		}
 
@@ -399,7 +418,7 @@ func init() {
 	createTaskCmd.Flags().Int("estimated-time", 0, "Estimated time in seconds")
 	createTaskCmd.Flags().String("list-id", "", "List ID")
 	createTaskCmd.Flags().String("label", "", "Label ID")
-	createTaskCmd.Flags().Int("priority", 0, "Priority (1-4)")
+	createTaskCmd.Flags().Int("priority", 0, "Priority: 0 (High), 1 (Medium), 2 (Low)")
 
 	// update command flags
 	updateTaskCmd.Flags().String("desc", "", "Task description")
@@ -410,7 +429,7 @@ func init() {
 	updateTaskCmd.Flags().Bool("complete", false, "Mark as complete")
 	updateTaskCmd.Flags().String("list-id", "", "List ID")
 	updateTaskCmd.Flags().String("label", "", "Label ID")
-	updateTaskCmd.Flags().Int("priority", 0, "Priority (1-4)")
+	updateTaskCmd.Flags().Int("priority", 0, "Priority: 0 (High), 1 (Medium), 2 (Low)")
 
 	tasksCmd.AddCommand(getTaskCmd)
 	tasksCmd.AddCommand(listTasksCmd)
@@ -488,8 +507,8 @@ func printTask(task *models.Task) {
 		}
 	}
 
-	if task.Priority != nil {
-		fmt.Printf("    Priority: %s\n", priorityString(*task.Priority))
+	if priority, ok := task.GetPriority(); ok {
+		fmt.Printf("    Priority: %s\n", priorityString(priority))
 	}
 
 	if task.Label != nil {
@@ -501,16 +520,19 @@ func printTask(task *models.Task) {
 	}
 }
 
+// priorityString names the priority levels the API accepts. The scale is inverted
+// and runs 0-2: 0 is the highest (High) and 2 the lowest (Low). Values 3 and 4,
+// which used to mean High/Urgent, are now rejected with a 400 invalid_task_priority.
+// A task with no priority comes back as null, not 0, so it never reaches here.
+// Anything outside 0-2 falls back to the number.
 func priorityString(p int) string {
 	switch p {
-	case 1:
-		return "Low"
-	case 2:
-		return "Medium"
-	case 3:
+	case 0:
 		return "High"
-	case 4:
-		return "Urgent"
+	case 1:
+		return "Medium"
+	case 2:
+		return "Low"
 	default:
 		return fmt.Sprintf("%d", p)
 	}

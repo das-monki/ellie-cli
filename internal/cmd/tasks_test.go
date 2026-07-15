@@ -107,6 +107,38 @@ func TestFormatStartTimeErrors(t *testing.T) {
 	}
 }
 
+func TestPriorityString(t *testing.T) {
+	// The scale is inverted -- 0 is the highest priority, confirmed against the
+	// Ellie UI -- so guard against anyone "correcting" it to ascending order.
+	tests := []struct {
+		p    int
+		want string
+	}{
+		{0, "High"},
+		{1, "Medium"},
+		{2, "Low"},
+		{7, "7"}, // out of range falls back to the number
+	}
+	for _, tt := range tests {
+		if got := priorityString(tt.p); got != tt.want {
+			t.Errorf("priorityString(%d) = %q, want %q", tt.p, got, tt.want)
+		}
+	}
+}
+
+func TestValidatePriority(t *testing.T) {
+	for _, p := range []int{0, 1, 2} {
+		if err := validatePriority(p); err != nil {
+			t.Errorf("validatePriority(%d) = %v, want nil", p, err)
+		}
+	}
+	for _, p := range []int{-1, 3, 4} {
+		if err := validatePriority(p); err == nil {
+			t.Errorf("validatePriority(%d) = nil, want an error", p)
+		}
+	}
+}
+
 func TestResolveLocation(t *testing.T) {
 	loc, err := resolveLocation("")
 	if err != nil {

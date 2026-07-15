@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"strconv"
 	"time"
 )
 
@@ -18,7 +19,7 @@ type Task struct {
 	CompletedAt   json.RawMessage `json:"completed_at,omitempty"`
 	ListID        *string         `json:"listId,omitempty"`
 	Label         *string         `json:"label,omitempty"`
-	Priority      *int            `json:"priority,omitempty"`
+	Priority      json.RawMessage `json:"priority,omitempty"`
 	RecurringID   *string         `json:"recurring_id,omitempty"`
 	Recurring     bool            `json:"recurring"`
 	CreatedAt     json.RawMessage `json:"created_at,omitempty"`
@@ -67,6 +68,38 @@ func (t *Task) GetDate() (time.Time, bool) {
 // GetStart returns the task's start instant, if it has one.
 func (t *Task) GetStart() (time.Time, bool) {
 	return ParseTimestamp(t.Start)
+}
+
+// ParsePriority decodes the two shapes the API uses for priority: a bare JSON
+// number and a quoted string. createTask/updateTask now echo the priority back
+// as a string ("1"), while older data may still arrive as a number, so both have
+// to be handled or the response fails to unmarshal outright.
+func ParsePriority(raw json.RawMessage) (int, bool) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return 0, false
+	}
+
+	var n int
+	if json.Unmarshal(raw, &n) == nil {
+		return n, true
+	}
+
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		if s == "" {
+			return 0, false
+		}
+		if n, err := strconv.Atoi(s); err == nil {
+			return n, true
+		}
+	}
+
+	return 0, false
+}
+
+// GetPriority returns the task's priority level, if it has one.
+func (t *Task) GetPriority() (int, bool) {
+	return ParsePriority(t.Priority)
 }
 
 // Subtask represents a subtask within a task

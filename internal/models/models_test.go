@@ -59,6 +59,53 @@ func TestParseTimestamp(t *testing.T) {
 	}
 }
 
+func TestParsePriority(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want int
+		ok   bool
+	}{
+		// createTask/updateTask now echo priority back as a quoted string.
+		{"string", `"2"`, 2, true},
+		{"string zero", `"0"`, 0, true},
+		// Older data may still arrive as a bare number.
+		{"number", `1`, 1, true},
+		{"number zero", `0`, 0, true},
+		{"null", `null`, 0, false},
+		{"empty string", `""`, 0, false},
+		{"absent", ``, 0, false},
+		{"non-numeric string", `"high"`, 0, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := ParsePriority(json.RawMessage(tt.raw))
+			if ok != tt.ok {
+				t.Fatalf("ParsePriority(%s) ok = %v, want %v", tt.raw, ok, tt.ok)
+			}
+			if ok && got != tt.want {
+				t.Errorf("ParsePriority(%s) = %d, want %d", tt.raw, got, tt.want)
+			}
+		})
+	}
+}
+
+// A task whose priority comes back as a string must still unmarshal -- the string
+// shape used to abort the whole response parse with "cannot unmarshal string into
+// Go struct field Task.priority of type int".
+func TestTaskUnmarshalStringPriority(t *testing.T) {
+	var task Task
+	body := `{"id":"x","description":"y","priority":"2"}`
+	if err := json.Unmarshal([]byte(body), &task); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	p, ok := task.GetPriority()
+	if !ok || p != 2 {
+		t.Errorf("GetPriority() = (%d, %v), want (2, true)", p, ok)
+	}
+}
+
 func TestTaskGetStartAndDate(t *testing.T) {
 	var task Task
 	body := `{
